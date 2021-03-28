@@ -59,30 +59,59 @@ class SeparationNet(tf.keras.layers.Layer):
     def __init__(self, param: TasNetParam, **kwargs):
         super(SeparationNet, self).__init__(**kwargs)
         self.param = param
-        self.L1 = tf.keras.layers.LSTM(self.param.H, return_sequences=True)
-        self.L2 = tf.keras.layers.LSTM(self.param.H, return_sequences=True)
-        self.L3 = tf.keras.layers.LSTM(self.param.H, return_sequences=True)
-        self.L4 = tf.keras.layers.LSTM(self.param.H, return_sequences=True)
-        self.skip_conn = tf.keras.layers.Add()
+        self.L1 = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(self.param.H, return_sequences=True))
+        self.L2 = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(self.param.H, return_sequences=True))
+
+        self.L3 = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(self.param.H, return_sequences=True))
+        self.L4 = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(self.param.H, return_sequences=True))
+        self.skip_conn_1 = tf.keras.layers.Add()
+
+        self.L5 = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(self.param.H, return_sequences=True))
+        self.L6 = tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(self.param.H, return_sequences=True))
+        self.skip_conn_2 = tf.keras.layers.Add()
+
         self.M = tf.keras.layers.Dense(self.param.N * self.param.C)
+        self.reshape_1 = tf.keras.layers.Reshape(
+            (self.param.K, self.param.C, self.param.N))
         self.softmax = tf.keras.layers.Softmax(axis=-2)
+        self.reshape_2 = tf.keras.layers.Reshape(
+            (self.param.K, self.param.N, self.param.C))
+        self.permute = tf.keras.layers.Permute((1, 3, 2))
         self.D = tf.keras.layers.Multiply()
-        self.reshape = tf.keras.layers.Reshape((self.param.K, self.param.C, self.param.N))
 
     def call(self, inputs):
         L1_outputs = self.L1(inputs)
         L2_outputs = self.L2(L1_outputs)
+
         L3_outputs = self.L3(L2_outputs)
         L4_outputs = self.L4(L3_outputs)
-        outputs = self.skip_conn([L2_outputs, L4_outputs])
-        outputs = self.M(outputs)
-        inputs = tf.keras.layers.concatenate([inputs for i in range(self.param.C)], axis=-1)
+        L4_outputs = self.skip_conn_1([L2_outputs, L4_outputs])
+
+        L5_outputs = self.L5(L4_outputs)
+        L6_outputs = self.L6(L5_outputs)
+        L6_outputs = self.skip_conn_2([L4_outputs, L6_outputs])
+
+        outputs = self.M(L6_outputs)
+        outputs = self.reshape_1(outputs)
+        outputs = self.softmax(outputs)
+
+        inputs = tf.keras.layers.concatenate(
+            [inputs for i in range(self.param.C)], axis=-1)
+        inputs = self.reshape_2(inputs)
+        inputs = self.permute(inputs)
+
         outputs = self.D([inputs, outputs])
-        outputs = self.reshape(outputs)
         return outputs
 
     def get_config(self):
         return self.param.get_config()
+
 
 class DecodingNet(tf.keras.layers.Layer):
     def __init__(self, param: TasNetParam, **kwargs):
@@ -106,19 +135,28 @@ class SiSNR(tf.keras.losses.Loss):
         self.param = param
 
     def call(self, s, s_hat):
-        s_hat = tf.reshape(s_hat, s.shape)
-        s_target = s * (tf.reduce_sum(tf.multiply(s, s_hat)) / tf.norm(s))
+        s_target = s * (tf.reduce_sum(tf.multiply(s, s_hat)) /
+                        tf.reduce_sum(tf.multiply(s, s)))
         e_noise = s_hat - s_target
         result = 20 * tf.math.log(tf.norm(e_noise) /
                                   (tf.norm(s_target) + 1e-10) + 1e-10)
         return result
 
 
+class SDR(tf.keras.losses.Loss):
+    def __init__(self, param: TasNetParam, **kwargs):
+        super(SDR, self).__init__(**kwargs)
+        self.param = param
+
+    def call(self, s, s_hat):
+        return 20 * tf.math.log(tf.norm(s_hat - s) / (tf.norm(s) + 1e-10) + 1e-10)
+
+
 class TasNet(tf.keras.Model):
     @staticmethod
-    def make(param: TasNetParam):
+    def make(param: TasNetParam, optimizer: tf.keras.optimizers.Optimizer, loss: tf.keras.losses.Loss):
         model = TasNet(param)
-        model.compile(optimizer="adam", loss=SiSNR(param))
+        model.compile(optimizer=optimizer, loss=loss)
         model.build(input_shape=(None, param.K, param.L))
         return model
 

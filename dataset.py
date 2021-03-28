@@ -5,11 +5,13 @@ import random
 from model import TasNetParam
 from tqdm import tqdm
 
+def get_track_names():
+    return ("vocals", "drums", "bass")
 
 def decode_source(track):
     rtn = {"audio": (track.audio[:, 0], track.audio[:, 1])}
     rtn["length"] = rtn["audio"][0].shape[-1]
-    for target in ("vocals", "drums", "bass", "other"):
+    for target in get_track_names():
         audio = track.targets[target].audio
         rtn[target] = (audio[:, 0], audio[:, 1])
     return rtn
@@ -39,11 +41,11 @@ def musdb_generator(param: TasNetParam, num_songs: int, batch_size: int, n: int)
             x_1 = np.reshape(track["audio"][1][start:end], shape)
             y_0 = [
                 np.reshape(track[target][0][start:end], shape)
-                for target in ("vocals", "drums", "bass", "other")
+                for target in get_track_names()
             ]
             y_1 = [
                 np.reshape(track[target][1][start:end], shape)
-                for target in ("vocals", "drums", "bass", "other")
+                for target in get_track_names()
             ]
             X.extend([x_0, x_1])
             Y.extend([y_0, y_1])
