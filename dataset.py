@@ -18,7 +18,7 @@ def decode_source(track):
 
 
 def musdb_generator(param: TasNetParam, num_songs: int, batch_size: int, n: int):
-    db = list(musdb.DB(root="D:/Datasets/musdb18", subsets="train").tracks)
+    db = list(musdb.DB(root="/home/paxbun/musdb18", subsets="train").tracks)
     random.shuffle(db)
     db = db[:num_songs]
 
@@ -54,9 +54,8 @@ def musdb_generator(param: TasNetParam, num_songs: int, batch_size: int, n: int)
 
 def make_dataset(param: TasNetParam, num_songs: int, batch_size: int, n: int):
     return tf.data.Dataset.from_generator(lambda: musdb_generator(param, num_songs, batch_size, n),
-                                          output_signature=(
-                                              tf.TensorSpec(
-                                                  shape=(batch_size * 2, param.K, param.L)),
-                                              tf.TensorSpec(
-                                                  shape=(batch_size * 2, param.C, param.K, param.L))
-    ))
+                                          output_types=(tf.float32, tf.float32),
+                                          output_shapes=(
+                                              tf.TensorShape((batch_size * 2, param.K, param.L)),
+                                              tf.TensorShape((batch_size * 2, param.C, param.K, param.L)),
+                                          ))
